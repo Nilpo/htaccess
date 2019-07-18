@@ -1,12 +1,12 @@
 # .htaccess Snippets
-A collection of useful .htaccess snippets, all in one place. I decided to create this repo after getting so tired (and bored) with Googling everytime there's a need of forcing `www` for my new website.
+A collection of useful .htaccess snippets, all in one place. 
 
-**Disclaimer**: While dropping the snippet into an `.htaccess` file is most of the time sufficient, there are cases when certain modifications might be required. Use with your own risks.
+**Disclaimer**: While dropping the snippet into an `.htaccess` file is most of the time sufficient, there are cases when certain modifications might be required. Use at your own risk.
 
 **IMPORTANT**: Apache 2.4 introduces a few breaking changes, most notably in access control configuration. For more information, check the [upgrading document](https://httpd.apache.org/docs/2.4/upgrading.html) as well as [this issue](https://github.com/phanan/htaccess/issues/2).
 
 ## Credits
-What I'm doing here is mostly collecting useful snippets from all over the interwebs (for example, a good chunk is from [Apache Server Configs](https://github.com/h5bp/server-configs-apache)) into one place. While I've been trying to credit where due, things might be missing. If you believe anything here is your work and credits should be given, let me know, or just send a PR.
+What we are doing here is mostly collecting useful snippets from all over the interwebs (for example, a good chunk is from [Apache Server Configs](https://github.com/h5bp/server-configs-apache)) into one place. While we've been trying to credit where due, things might be missing. If you believe anything here is your work and credits should be given, let us know, or just send a PR.
 
 ## Table of Contents
 - [Rewrite and Redirection](#rewrite-and-redirection)
@@ -17,6 +17,7 @@ What I'm doing here is mostly collecting useful snippets from all over the inter
     - [Force HTTPS](#force-https)
     - [Force HTTPS Behind a Proxy](#force-https-behind-a-proxy)
     - [Force Trailing Slash](#force-trailing-slash)
+    - [Remove Trailing Slash](#remove-trailing-slash)
     - [Redirect a Single Page](#redirect-a-single-page)
     - [Alias a Single Directory](#alias-a-single-directory)
     - [Alias Paths to Script](#alias-paths-to-script)
@@ -30,8 +31,7 @@ What I'm doing here is mostly collecting useful snippets from all over the inter
     - [Deny Access to Backup and Source Files](#deny-access-to-backup-and-source-files)
     - [Disable Directory Browsing](#disable-directory-browsing)
     - [Disable Image Hotlinking](#disable-image-hotlinking)
-    - [Disable Image Hotlinking for Fixed Domains with Block Banner](#disable-image-hotlinking-for-fixed-domains-with-block-banner)
-    - [Disable Image Hotlinking for Fixed Domains](#disable-image-hotlinking-for-fixed-domains)
+    - [Disable Image Hotlinking for Specific Domains](#disable-image-hotlinking-for-specific-domains)
     - [Password Protect a Directory](#password-protect-a-directory)
     - [Password Protect a File or Several Files](#password-protect-a-file-or-several-files)
 - [Performance](#performance)
@@ -46,6 +46,8 @@ What I'm doing here is mostly collecting useful snippets from all over the inter
     - [Allow Cross-Domain Fonts](#allow-cross-domain-fonts)
     - [Auto UTF-8 Encode](#auto-utf-8-encode)
     - [Switch to Another PHP Version](#switch-to-another-php-version)
+    - [Disable Internet Explorer Compatibility View](#disable-internet-explorer-compatibility-view)
+    - [Serve WebP Images](#serve-webp-images)
 
 ## Rewrite and Redirection
 Note: It is assumed that you have `mod_rewrite` installed and enabled.
@@ -67,7 +69,7 @@ RewriteRule ^ http%1://www.%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 This works for _any_ domain. [Source](https://stackoverflow.com/questions/4916222/htaccess-how-to-force-www-in-a-generic-way)
 
 ### Force non-www
-It's [still](http://www.sitepoint.com/domain-www-or-no-www/) [open](https://devcenter.heroku.com/articles/apex-domains) [for](http://yes-www.org/) [debate](http://no-www.org/) whether www or non-www is the master race, so if you happen to be a fan or bare domains, here you go:
+It's [still](http://www.sitepoint.com/domain-www-or-no-www/) [open](https://devcenter.heroku.com/articles/apex-domains) [for](http://yes-www.org/) [debate](http://no-www.org/) whether www or non-www is the way to go, so if you happen to be a fan of bare domains, here you go:
 ``` apacheconf
 RewriteEngine on
 RewriteCond %{HTTP_HOST} ^www\.example\.com [NC]
@@ -103,6 +105,11 @@ RewriteCond %{REQUEST_URI} /+[^\.]+$
 RewriteRule ^(.+[^/])$ %{REQUEST_URI}/ [R=301,L]
 ```
 
+### Remove Trailing Slash
+``` apacheconf
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)/$ /$1 [R=301,L]
+```
 ### Redirect a Single Page
 ``` apacheconf
 Redirect 301 /oldpage.html http://www.yoursite.com/newpage.html
@@ -118,13 +125,18 @@ RewriteRule ^source-directory/(.*) target-directory/$1
 
 ### Alias Paths To Script
 ``` apacheconf
+FallbackResource /index.fcgi
+```
+This example has an `index.fcgi` file in some directory, and any requests within that directory that fail to resolve a filename/directory will be sent to the `index.fcgi` script. It's good if you want `baz.foo/some/cool/path` to be handled by `baz.foo/index.fcgi` (which also supports requests to `baz.foo`) while maintaining `baz.foo/css/style.css` and the like. Get access to the original path from the PATH_INFO environment variable, as exposed to your scripting environment.
+
+``` apacheconf
 RewriteEngine On
 RewriteRule ^$ index.fcgi/ [QSA,L]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.fcgi/$1 [QSA,L]
 ```
-This example has an `index.fcgi` file in some directory, and any requests within that directory that fail to resolve a filename/directory will be sent to the `index.fcgi` script. It's good if you want `baz.foo/some/cool/path` to be handled by `baz.foo/index.fcgi` (which also supports requests to `baz.foo`) while maintaining `baz.foo/css/style.css` and the like.
+This is a less efficient version of the FallbackResource directive (because using `mod_rewrite` is more complex than just handling the `FallbackResource` directive), but it's also more flexible.
 
 ### Redirect an Entire Site
 ``` apacheconf
@@ -218,26 +230,28 @@ Options All -Indexes
 ### Disable Image Hotlinking
 ``` apacheconf
 RewriteEngine on
+# Remove the following line if you want to block blank referrer too
 RewriteCond %{HTTP_REFERER} !^$
-RewriteCond %{HTTP_REFERER} !^http(s)?://(www\.)?yourdomain.com [NC]
-RewriteRule \.(jpg|jpeg|png|gif)$ - [NC,F,L]
-```
-If you want block 'blank' referers too - delete `RewriteCond %{HTTP_REFERER} !^$` line (not recommended).
 
-### Disable Image Hotlinking for fixed domains
-This settings disabling image hotlinking for fixed sites only.
-``` apacheconf
-RewriteEngine on
-RewriteCond %{HTTP_REFERER} ^http(s)?://(www\.)?badsite.com.*$
-RewriteRule \.(jpg|jpeg|png|gif)$ - [NC,F,L]
+RewriteCond %{HTTP_REFERER} !^http(s)?://(.+\.)?yourdomain.com [NC]
+RewriteRule \.(jpg|jpeg|png|gif|bmp)$ - [NC,F,L]
+
+# If you want to display a "blocked" banner in place of the hotlinked image, 
+# replace the above rule with:
+# RewriteRule \.(jpg|jpeg|png|gif|bmp) http://yourdomain.com/blocked.png [R,L]
 ```
 
-### Disable Image Hotlinking for Fixed Domains with Block Banner
-This settings - rewrite all hotlinked images for fixed domains to your 'blocking banner' (ex. Image with you site url or message about hotlinking image)
+### Disable Image Hotlinking for Specific Domains
+Sometimes you want to disable image hotlinking from some bad guys only. The following snippet should help you with that. 
 ``` apacheconf
 RewriteEngine on
-RewriteCond %{HTTP_REFERER} ^http(s)?://(www\.)?badsite.com.*$
-RewriteRule \.(jpg|jpeg|png|gif) http://mysite.com/block_img.png [R,L]
+RewriteCond %{HTTP_REFERER} ^http(s)?://(.+\.)?badsite\.com [NC,OR]
+RewriteCond %{HTTP_REFERER} ^http(s)?://(.+\.)?badsite2\.com [NC,OR]
+RewriteRule \.(jpg|jpeg|png|gif)$ - [NC,F,L]
+
+# If you want to display a "blocked" banner in place of the hotlinked image, 
+# replace the above rule with:
+# RewriteRule \.(jpg|jpeg|png|gif|bmp) http://yourdomain.com/blocked.png [R,L]
 ```
 
 ### Password Protect a Directory
@@ -444,3 +458,24 @@ AddHandler application/x-httpd-php55 .php
 # Alternatively, you can use AddType
 AddType application/x-httpd-php55 .php
 ```
+
+### Disable Internet Explorer Compatibility View
+Compatibility View in IE may affect how some websites are displayed. The following snippet should force IE to use the Edge Rendering Engine and disable the Compatibility View.
+
+``` apacheconf
+<IfModule mod_headers.c>
+    BrowserMatch MSIE is-msie
+    Header set X-UA-Compatible IE=edge env=is-msie
+</IfModule>
+```
+
+### Serve WebP Images
+If [WebP images](https://developers.google.com/speed/webp/?csw=1) are supported and an image with a .webp extension and the same name is found at the same place as the jpg/png image that is going to be served, then the WebP image is served instead.
+
+``` apacheconf
+RewriteEngine On
+RewriteCond %{HTTP_ACCEPT} image/webp
+RewriteCond %{DOCUMENT_ROOT}/$1.webp -f
+RewriteRule (.+)\.(jpe?g|png)$ $1.webp [T=image/webp,E=accept:1]
+```
+[Source](https://github.com/vincentorback/WebP-images-with-htaccess)
